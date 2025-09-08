@@ -138,7 +138,7 @@ class Agent:
         "gemini": "gemini-1.5-flash"
     }
 
-    def __init__(self, api_key: str, default_model: str = None, memory_config: dict = None, provider: str = "openai"):
+    def __init__(self, default_model: str = None, memory_config: dict = None, provider: str = "openai"):
         """
         Initialise l'agent conversationnel.
         :param api_key: Clé API (OpenAI ou Gemini)
@@ -147,7 +147,7 @@ class Agent:
         :param provider: Provider à utiliser ("openai" ou "gemini")
         """
         self.provider = provider
-        self.api_key = api_key
+        self.api_key = self.get_api_key()
         self.model = default_model or self.DEFAULT_MODEL.get(provider, "gpt-4o")
         self.memory = Memory(**(memory_config or {}))
     
@@ -279,7 +279,7 @@ class TestClient:
         - Instancier avec la clé API, le provider ("openai" ou "gemini") et éventuellement une config mémoire.
         - Utiliser la méthode send pour envoyer un message et afficher la réponse.
     """
-    def __init__(self, api_key: str = "sk-TEST", memory_config: dict = None, provider: str = "openai", default_model: str = None):
+    def __init__(self, memory_config: dict = None, provider: str = "openai", default_model: str = None):
         """
         Initialise un TestClient.
         :param api_key: Clé API à utiliser (OpenAI ou Gemini)
@@ -312,7 +312,7 @@ class TestAgent:
         - Instancier avec la clé API, le provider ("openai" ou "gemini") et éventuellement une config mémoire.
         - Appeler run_all_tests() pour exécuter tous les scénarios.
     """
-    def __init__(self, api_key: str, memory_config: dict = None, provider: str = "openai", default_model: str = None):
+    def __init__(self, memory_config: dict = None, provider: str = "openai", default_model: str = None):
         """
         Initialise un TestAgent.
         :param api_key: Clé API à utiliser (OpenAI ou Gemini)
@@ -320,7 +320,7 @@ class TestAgent:
         :param provider: Provider à utiliser ("openai" ou "gemini")
         :param default_model: Modèle à utiliser (optionnel, sinon choisi dynamiquement)
         """
-        self.agent = Agent(api_key, default_model=default_model, memory_config=memory_config, provider=provider)
+        self.agent = Agent( default_model=default_model, memory_config=memory_config, provider=provider)
 
     def test_message_simple(self):
         """

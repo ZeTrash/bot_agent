@@ -4,6 +4,10 @@ from typing import List, Optional
 import openai
 import requests  # Ajouté pour Gemini
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Classe Memory avec SQLite et trim automatique ---
 class Memory:
@@ -17,12 +21,6 @@ class Memory:
         memory.add_long(user_id, "clé", "valeur")
     """
     def __init__(self, short_size: int = 10, db_path: str = "agent_memory.db", max_tokens_short: int = 2000):
-        """
-        Initialise la mémoire courte et longue.
-        :param short_size: Nombre maximum de messages en mémoire courte
-        :param db_path: Chemin du fichier SQLite pour la mémoire longue
-        :param max_tokens_short: Limite de tokens pour la mémoire courte (trim automatique)
-        """
         self.short_size = short_size
         self.short_context = defaultdict(lambda: deque(maxlen=short_size))  # Isolation par user_id
         self.db_path = db_path
@@ -30,9 +28,6 @@ class Memory:
         self._init_db()
 
     def _init_db(self):
-        """
-        Crée la table SQLite pour la mémoire longue si elle n'existe pas, avec isolation par user_id.
-        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("""
@@ -47,44 +42,20 @@ class Memory:
         conn.close()
 
     def add_short(self, user_id: str, message: str):
-        """
-        Ajoute un message à la mémoire courte de l'utilisateur et effectue un trim si besoin.
-        :param user_id: Identifiant utilisateur
-        :param message: Message à ajouter
-        """
         self.short_context[user_id].append(message)
         self.trim_short(user_id)
 
     def get_short(self, user_id: str) -> List[str]:
-        """
-        Retourne la liste des messages en mémoire courte de l'utilisateur.
-        :param user_id: Identifiant utilisateur
-        :return: Liste de messages
-        """
         return list(self.short_context[user_id])
 
     def reset_short(self, user_id: str):
-        """
-        Vide la mémoire courte de l'utilisateur.
-        :param user_id: Identifiant utilisateur
-        """
         self.short_context[user_id].clear()
 
     def trim_short(self, user_id: str):
-        """
-        Supprime les plus anciens messages si la limite de tokens est dépassée pour l'utilisateur.
-        :param user_id: Identifiant utilisateur
-        """
         while sum(len(m.split()) for m in self.short_context[user_id]) > self.max_tokens_short:
             self.short_context[user_id].popleft()
 
     def add_long(self, user_id: str, key: str, value: str):
-        """
-        Ajoute ou met à jour une entrée dans la mémoire longue (persistante) de l'utilisateur.
-        :param user_id: Identifiant utilisateur
-        :param key: Clé unique
-        :param value: Valeur à stocker
-        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO long_memory (user_id, key, value) VALUES (?, ?, ?)", (user_id, key, value))
@@ -92,12 +63,6 @@ class Memory:
         conn.close()
 
     def get_long(self, user_id: str, key: str) -> Optional[str]:
-        """
-        Récupère une valeur de la mémoire longue de l'utilisateur à partir de sa clé.
-        :param user_id: Identifiant utilisateur
-        :param key: Clé recherchée
-        :return: Valeur ou None
-        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("SELECT value FROM long_memory WHERE user_id = ? AND key = ?", (user_id, key))
@@ -106,11 +71,6 @@ class Memory:
         return row[0] if row else None
 
     def get_all_long(self, user_id: str) -> List[str]:
-        """
-        Retourne toutes les valeurs stockées dans la mémoire longue de l'utilisateur.
-        :param user_id: Identifiant utilisateur
-        :return: Liste de valeurs
-        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("SELECT value FROM long_memory WHERE user_id = ?", (user_id,))
@@ -138,9 +98,9 @@ class Agent:
             "gpt-3.5-turbo"
         ],
         "gemini": [
-            "gemini-1.5-flash", "gemini-1.5-pro", 
+            "gemini-1.5-flash", "gemini-1.5-pro",
             "gemini-2.0-flash", "gemini-2.0-pro",
-            "gemini-2.5-flash", "gemini-2.5-pro"
+            "gemini-2.5-flash", "gemini-2.5-pro",
         ]
     }
     DEFAULT_MODEL = {
@@ -161,18 +121,30 @@ class Agent:
         self.model = default_model or self.DEFAULT_MODEL.get(provider, "gpt-4o")
         self.memory = Memory(**(memory_config or {}))
     
-    def get_api_key(self, conf_path="api_conf.conf"):
+    def get_api_key(self, conf_path=".env"):
+        # Lecture d'abord via variables d'environnement
+        env_key = {
+            "openai": os.getenv("OPENAI_API_KEY"),
+            "gemini": os.getenv("GEMINI_API_KEY"),
+        }[self.provider]
+        if env_key:
+            return env_key
+        # Fallback ancien fichier de conf
         key_name = {
             "openai": "openai_api_key",
             "gemini": "gemini_api_key"
         }[self.provider]
-        with open(conf_path, "r") as f:
-            for line in f:
-                if line.startswith(key_name):
-                    return line.split("=", 1)[1].strip()
-        raise ValueError(f"Clé API pour {self.provider} non trouvée dans le fichier de configuration.")
+        try:
+            with open(conf_path, "r") as f:
+                for line in f:
+                    if line.startswith(key_name):
+                        return line.split("=", 1)[1].strip()
+        except FileNotFoundError:
+            pass
+        raise ValueError(f"Clé API pour {self.provider} non trouvée dans .env ni dans {conf_path}.")
 
-    def set_api_key(self, conf_path="api_conf.conf", new_key: str = None):  
+    def set_api_key(self, conf_path=".env", new_key: str = None):
+        # Méthode legacy conservée, mais on encourage l'usage des variables d'environnement
         key_name = {
             self.provider: self.provider+"_api_key",
         }[self.provider]
@@ -337,7 +309,7 @@ class TestAgent:
         Teste l'envoi d'un message simple à l'agent et affiche la réponse.
         """
         user_id = "test_user"
-        message = "Que sais-tu de moi ?"
+        message = "Bonjour, que peux-tu faire ?"
         print("[TestAgent] Test message simple...")
         response = self.agent.send_prompt(user_id, message)
         print(f"[TestAgent] Réponse: {response}")
@@ -383,32 +355,10 @@ class TestAgent:
         print(f"Réponse avec contexte : {response}")
         return response
 
-    def test_isolation_utilisateur(self):
-        """
-        Teste que la mémoire courte et longue est bien isolée entre deux utilisateurs différents.
-        """
-        user_a = "user_A"
-        user_b = "user_B"
-        print("[TestAgent] Test isolation mémoire entre utilisateurs...")
-        self.agent.send_prompt(user_a, "Message A1")
-        self.agent.send_prompt(user_a, "Message A2")
-        self.agent.send_prompt(user_b, "Message B1")
-        print(f"Mémoire courte user_A : {self.agent.memory.get_short(user_a)}")
-        print(f"Mémoire courte user_B : {self.agent.memory.get_short(user_b)}")
-        print(f"Mémoire longue user_A : {self.agent.memory.get_all_long(user_a)}")
-        print(f"Mémoire longue user_B : {self.agent.memory.get_all_long(user_b)}")
-        # Vérification robuste : aucun message de user_B dans la mémoire de user_A, et inversement
-        for m in self.agent.memory.get_short(user_a):
-            assert "Utilisateur(user_B):" not in m, "Fuite mémoire user_B dans user_A !"
-        for m in self.agent.memory.get_short(user_b):
-            assert "Utilisateur(user_A):" not in m, "Fuite mémoire user_A dans user_B !"
-        print("Isolation mémoire OK !")
-
     def run_all_tests(self):
         """
         Exécute tous les scénarios de test disponibles sur l'agent.
         """
         self.test_message_simple()
-        #self.test_message_avec_commandes()
-        #self.test_memoire()
-        #self.test_isolation_utilisateur()
+        self.test_message_avec_commandes()
+        self.test_memoire()

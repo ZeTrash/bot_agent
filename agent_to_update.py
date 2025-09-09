@@ -355,6 +355,27 @@ class TestAgent:
         print(f"Réponse avec contexte : {response}")
         return response
 
+    def test_isolation_utilisateur(self):
+        """
+        Teste que la mémoire courte et longue est bien isolée entre deux utilisateurs différents.
+        """
+        user_a = "user_A"
+        user_b = "user_B"
+        print("[TestAgent] Test isolation mémoire entre utilisateurs...")
+        self.agent.send_prompt(user_a, "Message A1")
+        self.agent.send_prompt(user_a, "Message A2")
+        self.agent.send_prompt(user_b, "Message B1")
+        print(f"Mémoire courte user_A : {self.agent.memory.get_short(user_a)}")
+        print(f"Mémoire courte user_B : {self.agent.memory.get_short(user_b)}")
+        print(f"Mémoire longue user_A : {self.agent.memory.get_all_long(user_a)}")
+        print(f"Mémoire longue user_B : {self.agent.memory.get_all_long(user_b)}")
+        # Vérification robuste : aucun message de user_B dans la mémoire de user_A, et inversement
+        for m in self.agent.memory.get_short(user_a):
+            assert "Utilisateur(user_B):" not in m, "Fuite mémoire user_B dans user_A !"
+        for m in self.agent.memory.get_short(user_b):
+            assert "Utilisateur(user_A):" not in m, "Fuite mémoire user_A dans user_B !"
+        print("Isolation mémoire OK !")
+
     def run_all_tests(self):
         """
         Exécute tous les scénarios de test disponibles sur l'agent.
@@ -362,3 +383,4 @@ class TestAgent:
         self.test_message_simple()
         self.test_message_avec_commandes()
         self.test_memoire()
+        self.test_isolation_utilisateur()
